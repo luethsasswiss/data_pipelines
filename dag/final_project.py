@@ -1,6 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 import pendulum
-import os
 
 from airflow.decorators import dag
 from airflow.operators.dummy_operator import DummyOperator
