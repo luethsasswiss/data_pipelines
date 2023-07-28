@@ -19,7 +19,7 @@ default_args = {
 
 dag = DAG('final_project_dag',
           default_args=default_args,
-          start_date=datetime(2022, 1, 2),
+          start_date=datetime.now(),
           description='Load and transform data in Redshift with Airflow',
           schedule_interval='@hourly',
           max_active_runs=2
