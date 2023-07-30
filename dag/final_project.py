@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
+import os
 
 from airflow import DAG
 from airflow.operators.dummy_operator import DummyOperator
+from airflow.operators.postgres_operator import PostgresOperator
 from operators.stage_redshift import StageToRedshiftOperator
 from operators.data_quality import DataQualityOperator
 from operators.load_fact import LoadFactOperator
@@ -25,7 +27,22 @@ dag = DAG('final_project_dag',
           max_active_runs=2
           )
 
-start_operator = DummyOperator(task_id='Begin_execution',  dag=dag)
+script_dir = os.path.dirname(__file__)  # <-- absolute dir the script is in
+rel_path = "create_tables.sql"
+abs_file_path = os.path.join(script_dir, rel_path)
+
+create_tables_sql = None
+with open(abs_file_path) as file:
+    create_tables_sql = file.read()
+
+create_tables = PostgresOperator(
+    task_id="create_tables",
+    dag=dag,
+    postgres_conn_id="redshift",
+    sql=create_tables_sql
+)
+
+start_operator = DummyOperator(task_id='Begin_execution', dag=dag)
 
 stage_events_to_redshift = StageToRedshiftOperator(
     task_id='Stage_events',
@@ -33,7 +50,9 @@ stage_events_to_redshift = StageToRedshiftOperator(
     redshift_conn_id="redshift",
     aws_credentials_id="aws_credentials",
     s3_bucket="sascha-redshift-bucket",
-    s3_key="log_data/2018/11/"
+    s3_key="log-data",
+    json_path="s3://sascha-redshift-bucket/log_json_path.json"
+
 )
 
 stage_songs_to_redshift = StageToRedshiftOperator(
@@ -42,7 +61,8 @@ stage_songs_to_redshift = StageToRedshiftOperator(
     redshift_conn_id="redshift",
     aws_credentials_id="aws_credentials",
     s3_bucket="sascha-redshift-bucket",
-    s3_key="song_data"
+    s3_key="song-data",
+    json_path="auto"
 )
 
 load_songplays_table = LoadFactOperator(
@@ -92,12 +112,11 @@ run_quality_checks = DataQualityOperator(
     task_id='Run_data_quality_checks',
     dag=dag,
     redshift_conn_id="redshift",
-    tables=["public.songplays", "public.artists", "public.time", "public.songs", "public.users"]
+    tables=["songplays", "artists", "time", "songs", "users"]
 )
 
-end_operator = DummyOperator(task_id='Stop_execution',  dag=dag)
+end_operator = DummyOperator(task_id='Stop_execution', dag=dag)
 
-start_operator >> [stage_events_to_redshift, stage_songs_to_redshift] >> load_songplays_table >> [
+start_operator >> create_tables >> [stage_events_to_redshift, stage_songs_to_redshift] >> load_songplays_table >> [
     load_user_dimension_table, load_song_dimension_table, load_artist_dimension_table,
     load_time_dimension_table] >> run_quality_checks >> end_operator
-
